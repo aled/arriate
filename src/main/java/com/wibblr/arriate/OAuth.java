@@ -1,6 +1,5 @@
 package com.wibblr.arriate;
 
-import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -65,15 +64,15 @@ public class OAuth {
 			} else {
 				sb.append(",");
 			}
-			sb.append(parameterEncode(k));
+			sb.append(encodeParameter(k));
 			sb.append("=\"");
-			sb.append(parameterEncode(authFields.get(k)));
+			sb.append(encodeParameter(authFields.get(k)));
 			sb.append("\"");
 		}		
 		return sb.toString();
 	}
 	
-	private String parameterEncode(String s) {
+	static String encodeParameter(String s) {
 		StringBuffer sb = new StringBuffer();
 		
 		for (int i = 0; i < s.length(); i++) {
@@ -95,9 +94,9 @@ public class OAuth {
 					
 					// output as hex
 				}
-			}
-						
+			}				
 		}
+		return sb.toString();
 	}
 	
 	private void getResponse(String url,  HashMap<String, String> requestHeaders) {
