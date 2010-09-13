@@ -1,10 +1,16 @@
-apply plugin: 'groovy'
+apply plugin: 'scala'
 apply plugin: 'eclipse'
 
 repositories {
-    mavenCentral()
+	mavenCentral()
 }
 
 dependencies {
-    groovy group: 'org.codehaus.groovy', name: 'groovy', version: '1.7.4'
+	scalaTools 'org.scala-lang:scala-compiler:2.8.0'
+    scalaTools 'org.scala-lang:scala-library:2.8.0'
+    
+    compile 'org.scala-lang:scala-library:2.8.0'
+    compile files ('lib/scribe-1.0.1.jar')
+    
+    runtime 'commons-codec:commons-codec:1.4'
 }
