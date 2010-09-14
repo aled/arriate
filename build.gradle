@@ -10,7 +10,7 @@ dependencies {
     scalaTools 'org.scala-lang:scala-library:2.8.0'
     
     compile 'org.scala-lang:scala-library:2.8.0'
-    compile files ('lib/scribe-1.0.1.jar')
+    //compile files ('lib/scribe-1.0.1.jar')
     
     testCompile 'junit:junit:4.8.1'
     

@@ -1,4 +1,4 @@
-package com.wibblr.arriate;
+package com.wibblr.arriate.auth;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
@@ -6,7 +6,9 @@ import java.net.URLConnection;
 import java.util.HashMap;
 import java.util.UUID;
 
-public class OAuth {
+import org.apache.commons.codec.binary.Hex;
+
+public class OAuth10 {
 	// As far as I can tell, all the available OAuth libraries seem to only work with 
 	// v1.0a of the standard.
 	// Therefore let's just write the stupid thing in longhand - how hard can it be...?
@@ -19,7 +21,7 @@ public class OAuth {
 	private static String AUTHORISE_URL = "http://www.openstreetmap.org/oauth/authorize";
 	
 	public static void main(String[] args) {
-		new OAuth().authenticate();
+		new OAuth10().authenticate();
 	}
 	
 	private void authenticate() {
@@ -85,14 +87,16 @@ public class OAuth {
 				sb.append(c);
 			}
 			else {
-				sb.append("%");
 				
 				try {
-					byte[] utf8Char = new String(new char[] {c}).getBytes("UTF-8");
+					byte[] utf8Char = new String(new char[]{c}).getBytes("UTF-8");					
+					
+					for (byte b : utf8Char) {
+						sb.append("%");
+						sb.append(Hex.encodeHexString(new byte[]{b}).toUpperCase());
+					}
 				} catch (UnsupportedEncodingException e) {
 					e.printStackTrace();
-					
-					// output as hex
 				}
 			}				
 		}
