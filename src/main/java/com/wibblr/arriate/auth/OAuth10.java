@@ -2,6 +2,8 @@ package com.wibblr.arriate.auth;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -84,6 +86,16 @@ public class OAuth10 {
 			sb.append("\"");
 		}		
 		return sb.toString();
+	}
+	
+	public static HashMap<String, String> parseParameters(InputStream is) throws IOException, DecoderException {
+		HashMap<String, String> parameters = new HashMap<String, String>();
+		DelimitedStringReader rdr = new DelimitedStringReader(new InputStreamReader(is));
+		
+		while (rdr.ready()) {
+			parameters.put(decodeParameter(rdr.next('=')), decodeParameter(rdr.next('&')));
+		}	
+		return parameters;
 	}
 	
 	static String normalizeParameters(String s) {

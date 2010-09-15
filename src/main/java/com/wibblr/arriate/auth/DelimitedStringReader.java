@@ -22,6 +22,7 @@ public class DelimitedStringReader extends BufferedReader {
 		StringBuffer sb = new StringBuffer();
 		while (c != -1 && c != delimiter) {
 			sb.append((char)c);
+			c = read();
 		}
 		return sb.toString();
 	}
