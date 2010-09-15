@@ -1,11 +1,15 @@
 package com.wibblr.arriate.auth;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.HashMap;
+import java.util.Properties;
 import java.util.UUID;
 
+import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 
 public class OAuth10 {
@@ -13,38 +17,46 @@ public class OAuth10 {
 	// v1.0a of the standard.
 	// Therefore let's just write the stupid thing in longhand - how hard can it be...?
 	
-	private static String CONSUMER_KEY = "";
-	private static String CONSUMER_SECRET = "";
+	private String consumerKey = null;
+	private String consumerSecret = null;
+	private String requestTokenUrl = null;
+	private String accessTokenUrl = null;
+	private String authoriseUrl = null;
 	
-	private static String REQUEST_TOKEN_URL = "http://www.openstreetmap.org/oauth/request_token";
-	private static String ACCESS_TOKEN_URL = "http://www.openstreetmap.org/oauth/access_token";
-	private static String AUTHORISE_URL = "http://www.openstreetmap.org/oauth/authorize";
+	public OAuth10(String url) throws IOException {
+		Properties p = new Properties();
+		p.load(getClass().getResourceAsStream("/oauth/" + url + "/oauth-consumer.properties"));
+		
+		consumerKey = p.getProperty("CONSUMER_KEY");
+		consumerSecret = p.getProperty("CONSUMER_SECRET");
+		
+		p.clear();
+		p.load(getClass().getResourceAsStream("/oauth/" + url + "/oauth-provider.properties"));
 	
+		requestTokenUrl = p.getProperty("REQUEST_TOKEN_URL");
+		accessTokenUrl = p.getProperty("ACCESS_TOKEN_URL");
+		authoriseUrl = p.getProperty("AUTHORISE_URL");
+	}
+
 	public static void main(String[] args) {
-		new OAuth10().authenticate();
+		try {
+			new OAuth10("www.openstreetmap.org").authenticate();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 	
 	private void authenticate() {
 		try {
 			getRequestToken();
-			
-//			Map<String, List<String>> headerFields = con.getHeaderFields();
-//			
-//			for (String k : headerFields.keySet()) {
-//				System.out.println(k);
-//				for (String v : headerFields.get(k)) {
-//					System.out.println("  " + v);
-//				}
-//			}
 		} catch (Exception e) {		
 			System.out.println(e.getMessage());
-		}
-		
+		}	
 	}
 	
 	private void getRequestToken() {
 		HashMap<String, String> authFields = new HashMap<String, String>();
-		authFields.put("oauth_consumer_key", CONSUMER_KEY);
+		authFields.put("oauth_consumer_key", consumerKey);
 		authFields.put("oauth_signature_method", "HMAC_SHA1");
 		authFields.put("oauth_signature", "");
 		authFields.put("oauth_timestamp", Long.toString(System.currentTimeMillis() / 1000));
@@ -54,7 +66,7 @@ public class OAuth10 {
 	
 		HashMap<String, String> requestHeaders = new HashMap<String, String>();
 		requestHeaders.put("Authorization", getAuthorizationHeader(authFields));
-		getResponse(REQUEST_TOKEN_URL, requestHeaders);
+		getResponse(requestTokenUrl, requestHeaders);
 	}
 	
 	private String getAuthorizationHeader(HashMap<String, String> authFields) {
@@ -71,6 +83,42 @@ public class OAuth10 {
 			sb.append(encodeParameter(authFields.get(k)));
 			sb.append("\"");
 		}		
+		return sb.toString();
+	}
+	
+	static String normalizeParameters(String s) {
+		return null;
+	}
+	
+	static String decodeParameter(String s) throws DecoderException {
+		StringBuffer sb = new StringBuffer();
+		
+		char[] hexBuf = new char[2];
+		ByteArrayOutputStream buf = new ByteArrayOutputStream();
+		
+		try {
+			for (int i = 0; i < s.length(); i++) {
+				char c = s.charAt(i);
+				
+				if (c != '%') {
+					if (buf.size() > 0) {						
+						sb.append(buf.toString("UTF-8"));
+						buf.reset();
+					}
+					sb.append(c);
+				}			
+				else if (c == '%') {			
+					hexBuf[0] = s.charAt(++i);
+					hexBuf[1] = s.charAt(++i);
+					buf.write(Hex.decodeHex(hexBuf)[0]);
+				}
+			}
+			if (buf.size() > 0) {
+				sb.append(buf.toString("UTF-8"));
+			}
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
 		return sb.toString();
 	}
 	
@@ -110,7 +158,13 @@ public class OAuth10 {
 			for (String k : requestHeaders.keySet()) {
 				con.setRequestProperty(k, requestHeaders.get(k));
 			}
+			
+			HashMap<String, String> encodedParameters = new HashMap<String, String>();
+			//ByteArrayOutputStream bais = new ByteArrayOutputStream( (null, con.getContentLength(), 0);
+			
 		}
-		catch (Exception e) {}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 }
