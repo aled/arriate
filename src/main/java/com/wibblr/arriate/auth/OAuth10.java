@@ -5,13 +5,19 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLConnection;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Properties;
 import java.util.UUID;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+
 import org.apache.commons.codec.DecoderException;
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.binary.Hex;
 
 public class OAuth10 {
@@ -23,7 +29,7 @@ public class OAuth10 {
 	private String consumerSecret = null;
 	private String requestTokenUrl = null;
 	private String accessTokenUrl = null;
-	private String authoriseUrl = null;
+	private String authorizeUrl = null;
 	
 	public OAuth10(String url) throws IOException {
 		Properties p = new Properties();
@@ -37,17 +43,9 @@ public class OAuth10 {
 	
 		requestTokenUrl = p.getProperty("REQUEST_TOKEN_URL");
 		accessTokenUrl = p.getProperty("ACCESS_TOKEN_URL");
-		authoriseUrl = p.getProperty("AUTHORISE_URL");
+		authorizeUrl = p.getProperty("AUTHORIZE_URL");
 	}
 
-	public static void main(String[] args) {
-		try {
-			new OAuth10("www.openstreetmap.org").authenticate();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
-	
 	private void authenticate() {
 		try {
 			getRequestToken();
@@ -56,19 +54,55 @@ public class OAuth10 {
 		}	
 	}
 	
-	private void getRequestToken() {
+	void getRequestToken() throws Exception {
 		HashMap<String, String> authFields = new HashMap<String, String>();
 		authFields.put("oauth_consumer_key", consumerKey);
-		authFields.put("oauth_signature_method", "HMAC_SHA1");
-		authFields.put("oauth_signature", "");
+		authFields.put("oauth_signature_method", "HMAC-SHA1");
 		authFields.put("oauth_timestamp", Long.toString(System.currentTimeMillis() / 1000));
 		authFields.put("oauth_nonce", UUID.randomUUID().toString());
 		authFields.put("oauth_version", "1.0");
 		authFields.put("oauth_callback", "");
-	
-		HashMap<String, String> requestHeaders = new HashMap<String, String>();
-		requestHeaders.put("Authorization", getAuthorizationHeader(authFields));
-		getResponse(requestTokenUrl, requestHeaders);
+		
+		HashMap<String, String> requestProperties = new HashMap<String, String>();
+		
+		String httpRequestMethod = "POST";
+		String requestUrl = requestTokenUrl;
+		String normalizedParameters = normalizeParameters(authFields);
+		
+		String signatureBaseString = getSignatureBaseString(httpRequestMethod, requestUrl, normalizedParameters);
+		
+		authFields.put("oauth_signature",  encodeParameter(getSignature(signatureBaseString, consumerSecret, "")));
+		requestProperties.put("Authorization", getAuthorizationHeader(authFields));
+		
+		try {
+			HttpURLConnection con = (HttpURLConnection) new URL(requestTokenUrl).openConnection();
+			con.setRequestMethod(httpRequestMethod);
+			
+			System.out.println("Request properties:");
+			for (String key : requestProperties.keySet()) {
+				con.setRequestProperty(key, requestProperties.get(key));
+				System.out.println(key + " = " + requestProperties.get(key));
+			}
+			
+			System.out.println("Response headers:");
+			for (String key : con.getHeaderFields().keySet()) {
+				System.out.println(key + " = " + con.getHeaderField(key));
+			}
+			
+			if (con.getResponseCode() == 401) {
+				throw new Exception("401 returned");
+			}
+			
+			HashMap<String, String> responseParameters = parseParameters(con.getInputStream());
+			
+			System.out.println("Response parameters:");
+			for (String key : responseParameters.keySet()) {
+				System.out.println(key + " = " + responseParameters.get(key));
+			}			
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 	
 	private String getAuthorizationHeader(HashMap<String, String> authFields) {
@@ -98,8 +132,41 @@ public class OAuth10 {
 		return parameters;
 	}
 	
-	static String normalizeParameters(String s) {
-		return null;
+	static String getSignature(String signatureBaseString, String consumerSecret, String tokenSecret) throws Exception {
+		return hmacsha1(signatureBaseString, encodeParameter(consumerSecret) + "&" + encodeParameter(tokenSecret));
+	}
+	
+	static String hmacsha1(String text, String key) throws Exception {
+		SecretKeySpec keySpec = new SecretKeySpec(key.getBytes("UTF-8"), "HmacSHA1");
+		Mac mac = Mac.getInstance("HmacSHA1");
+		mac.init(keySpec);
+		byte[] bytes = mac.doFinal(text.getBytes("UTF-8"));
+		return new String(Base64.encodeBase64(bytes));
+	}
+	
+	static String getSignatureBaseString(String httpRequestMethod, String requestUrl, String normalizedParameters) {
+		return encodeParameter(httpRequestMethod) 
+			+ "&" + encodeParameter(requestUrl) 
+			+ "&" + encodeParameter(normalizedParameters);
+	}
+	
+	static String normalizeParameters(HashMap<String, String> parameterMap) {
+		ArrayList<String> parameterList = new ArrayList<String>();
+		for(String key : parameterMap.keySet()) {
+			if (key.equals("oauth_signature")) continue;
+			if (key.equals("realm")) continue;
+			
+			parameterList.add(encodeParameter(key) + "=" + encodeParameter(parameterMap.get(key)));
+		}
+		
+		Collections.sort(parameterList);
+		
+		StringBuffer sb = new StringBuffer();
+		for (String s : parameterList) {
+			if (sb.length() > 0) sb.append("&");
+			sb.append(s);
+		}
+		return sb.toString();
 	}
 	
 	static String decodeParameter(String s) throws DecoderException {
@@ -163,20 +230,7 @@ public class OAuth10 {
 		return sb.toString();
 	}
 	
-	private void getResponse(String url,  HashMap<String, String> requestHeaders) {
-		try {
-			URLConnection con = new URL(url).openConnection();
-			
-			for (String k : requestHeaders.keySet()) {
-				con.setRequestProperty(k, requestHeaders.get(k));
-			}
-			
-			HashMap<String, String> encodedParameters = new HashMap<String, String>();
-			//ByteArrayOutputStream bais = new ByteArrayOutputStream( (null, con.getContentLength(), 0);
-			
-		}
-		catch (Exception e) {
-			e.printStackTrace();
-		}
+	private void getResponse(String url,  HashMap<String, String> requestProperties) {
+		
 	}
 }
