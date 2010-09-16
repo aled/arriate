@@ -51,18 +51,11 @@ public class OAuth10Tests  {
 		assertEquals(2, parameters.size());
 		assertEquals("ab3cd9j4ks73hf7g", parameters.get("oauth_token"));
 		assertEquals("xyz4992k83j47x0b", parameters.get("oauth_token_secret"));
-	}
+	}		
 	
-	@Test
-	public void getSignature() throws Exception {
-		assertEquals("tR3+Ty81lMeYAr/Fid0kMTYa/WM=", OAuth10.hmacsha1(
-				"GET&http%3A%2F%2Fphotos.example.net%2Fphotos&file%3Dvacation.jpg%26oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3Dkllo9940pd9333jh%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1191242096%26oauth_token%3Dnnch734d00sl2jdk%26oauth_version%3D1.0%26size%3Doriginal", 
-				"kd94hf93k423kf44&pfkkdhi9sl3r4s00"));
-	}
-	
-	@Test
 	// these test cases are from: 
 	//    http://hueniverse.com/2008/10/beginners-guide-to-oauth-part-iv-signing-requests/
+	@Test
 	public void normalizeParameters() {
 		HashMap<String, String> parameters = new HashMap<String, String>();
 		
@@ -86,14 +79,23 @@ public class OAuth10Tests  {
 	@Test
 	public void signatureBaseString() {
 		String actual = OAuth10.getSignatureBaseString("POST", "http://term.ie/oauth/example/request_token.php", "oauth_consumer_key=key&oauth_nonce=12345&oauth_signature_method=HMAC-SHA1&oauth_timestamp=1234567890&oauth_token=&oauth_version=1.0");
-		String expected = "POST&http%3A%2F%2Fterm.ie%2Foauth%2Fexample%2Frequest_token.php&oauth_consumer_key%3Dkey%26oauth_nonce%3D12345%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1234567890%26oauth_token%3D%26oauth_version%3D1.0";
+		String expected = "POST&http%3A%2F%2Fterm.ie%2Foauth%2Fexample%2Frequest_token.php&oauth_consumer_key%3Dkey%26oauth_nonce%3D12345%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1234567890%26oauth_token%3D%26oauth_version%3D1.0";			             
 		assertEquals(expected, actual);
 	}
 	
 	@Test
-	public void signature() throws Exception {
+	public void getSignature() throws Exception {
 		String actual = OAuth10.getSignature("POST&http%3A%2F%2Fterm.ie%2Foauth%2Fexample%2Frequest_token.php&oauth_consumer_key%3Dkey%26oauth_nonce%3D12345%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1234567890%26oauth_token%3D%26oauth_version%3D1.0", "secret", "");
 		String expected = "TFxeHkv+11gg/xWwNftJBobulOk=";
 		assertEquals(expected, actual);
+		
+		assertEquals("TFxeHkv%2B11gg%2FxWwNftJBobulOk%3D", OAuth10.encodeParameter(actual));
+	}
+	
+	@Test
+	public void hmacsha1() throws Exception {
+		assertEquals("tR3+Ty81lMeYAr/Fid0kMTYa/WM=", OAuth10.hmacsha1(
+				"GET&http%3A%2F%2Fphotos.example.net%2Fphotos&file%3Dvacation.jpg%26oauth_consumer_key%3Ddpf43f3p2l4k3l03%26oauth_nonce%3Dkllo9940pd9333jh%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1191242096%26oauth_token%3Dnnch734d00sl2jdk%26oauth_version%3D1.0%26size%3Doriginal", 
+				"kd94hf93k423kf44&pfkkdhi9sl3r4s00"));
 	}
 }

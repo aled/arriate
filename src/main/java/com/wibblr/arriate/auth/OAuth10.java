@@ -1,5 +1,6 @@
 package com.wibblr.arriate.auth;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -49,19 +50,19 @@ public class OAuth10 {
 
 	private void authenticate() {
 		try {
-			getRequestToken();
+			getRequestToken(Long.toString(System.currentTimeMillis() / 1000), UUID.randomUUID().toString());
 		} catch (Exception e) {		
 			System.out.println(e.getMessage());
 		}	
 	}
 	
-	void getRequestToken() throws Exception {
+	void getRequestToken(String timestamp, String nonce) throws Exception {
 		HashMap<String, String> authFields = new HashMap<String, String>();
 		authFields.put("oauth_consumer_key", consumerKey);
 		authFields.put("oauth_signature_method", "HMAC-SHA1");
 		authFields.put("oauth_token", "");
-		authFields.put("oauth_timestamp", Long.toString(System.currentTimeMillis() / 1000));
-		authFields.put("oauth_nonce", UUID.randomUUID().toString());
+		authFields.put("oauth_timestamp", timestamp);
+		authFields.put("oauth_nonce", nonce);
 		authFields.put("oauth_version", "1.0");
 		authFields.put("oauth_callback", "");
 		
@@ -73,7 +74,7 @@ public class OAuth10 {
 		
 		String signatureBaseString = getSignatureBaseString(httpRequestMethod, requestUrl, normalizedParameters);
 		
-		authFields.put("oauth_signature",  encodeParameter(getSignature(signatureBaseString, consumerSecret, "")));
+		authFields.put("oauth_signature",  getSignature(signatureBaseString, consumerSecret, ""));
 		requestProperties.put("Authorization", getAuthorizationHeader(authFields));
 		
 		try {
@@ -91,8 +92,13 @@ public class OAuth10 {
 				System.out.println(key + " = " + con.getHeaderField(key));
 			}
 			
-			if (con.getResponseCode() == 401) {
-				throw new Exception("401 returned");
+			if (con.getResponseCode() != 200) {
+				BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream()));
+				String line;
+				while ((line = br.readLine()) != null) {
+					System.out.println(line);
+				}
+				return;
 			}
 			
 			HashMap<String, String> responseParameters = parseParameters(con.getInputStream());
