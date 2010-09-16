@@ -61,11 +61,39 @@ public class OAuth10Tests  {
 	}
 	
 	@Test
-	public void parameterNormalization() {
-		//assertEquals("name", OAuth10.normalizeParameters("name"));
-		//assertEquals("a=b", OAuth10.normalizeParameters("a=b"));
-		//assertEquals("a=b&c=d", OAuth10.normalizeParameters("a=b&c=d"));
-		//assertEquals("a=x!y&a=x+y", OAuth10.normalizeParameters("a=x%20y&a=x%21y"));
-		//assertEquals("x!y=a&x=a", OAuth10.normalizeParameters("x=a&x%21y=a"));
+	// these test cases are from: 
+	//    http://hueniverse.com/2008/10/beginners-guide-to-oauth-part-iv-signing-requests/
+	public void normalizeParameters() {
+		HashMap<String, String> parameters = new HashMap<String, String>();
+		
+		parameters.put("oauth_consumer_key", "key");
+		parameters.put("oauth_nonce", "12345");
+		parameters.put("oauth_signature_method", "HMAC-SHA1");
+		parameters.put("oauth_token", "");
+		parameters.put("oauth_timestamp", "1234567890");
+		parameters.put("oauth_version", "1.0");
+		
+		assertEquals("oauth_consumer_key=key&oauth_nonce=12345&oauth_signature_method=HMAC-SHA1&oauth_timestamp=1234567890&oauth_token=&oauth_version=1.0",
+				OAuth10.normalizeParameters(parameters));
+	}
+	
+	@Test
+	public void normalizeUrl() {
+		assertEquals("http://term.ie/oauth/example/request_token.php", 
+				OAuth10.normalizeUrl("http", "term.ie", 80, "/oauth/example/request_token.php"));
+	}
+	
+	@Test
+	public void signatureBaseString() {
+		String actual = OAuth10.getSignatureBaseString("POST", "http://term.ie/oauth/example/request_token.php", "oauth_consumer_key=key&oauth_nonce=12345&oauth_signature_method=HMAC-SHA1&oauth_timestamp=1234567890&oauth_token=&oauth_version=1.0");
+		String expected = "POST&http%3A%2F%2Fterm.ie%2Foauth%2Fexample%2Frequest_token.php&oauth_consumer_key%3Dkey%26oauth_nonce%3D12345%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1234567890%26oauth_token%3D%26oauth_version%3D1.0";
+		assertEquals(expected, actual);
+	}
+	
+	@Test
+	public void signature() throws Exception {
+		String actual = OAuth10.getSignature("POST&http%3A%2F%2Fterm.ie%2Foauth%2Fexample%2Frequest_token.php&oauth_consumer_key%3Dkey%26oauth_nonce%3D12345%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1234567890%26oauth_token%3D%26oauth_version%3D1.0", "secret", "");
+		String expected = "TFxeHkv+11gg/xWwNftJBobulOk=";
+		assertEquals(expected, actual);
 	}
 }

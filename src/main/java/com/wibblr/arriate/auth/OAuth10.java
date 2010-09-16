@@ -9,6 +9,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Properties;
 import java.util.UUID;
@@ -58,6 +59,7 @@ public class OAuth10 {
 		HashMap<String, String> authFields = new HashMap<String, String>();
 		authFields.put("oauth_consumer_key", consumerKey);
 		authFields.put("oauth_signature_method", "HMAC-SHA1");
+		authFields.put("oauth_token", "");
 		authFields.put("oauth_timestamp", Long.toString(System.currentTimeMillis() / 1000));
 		authFields.put("oauth_nonce", UUID.randomUUID().toString());
 		authFields.put("oauth_version", "1.0");
@@ -150,29 +152,68 @@ public class OAuth10 {
 			+ "&" + encodeParameter(normalizedParameters);
 	}
 	
+	static String normalizeUrl(String scheme, String host, int port, String path) {
+		StringBuffer sb = new StringBuffer();
+		sb.append(scheme);
+		sb.append("://");
+		sb.append(host);
+		if (("http".equals(scheme) && port != 80) || ("https".equals(scheme) && port != 443)) {
+			sb.append(":");
+			sb.append(Integer.toString(port));
+		}
+		sb.append(path);
+		return sb.toString();
+	}
+	
 	static String normalizeParameters(HashMap<String, String> parameterMap) {
-		ArrayList<String> parameterList = new ArrayList<String>();
+		ArrayList<String[]> parameterArray = new ArrayList<String[]>();
+		
 		for(String key : parameterMap.keySet()) {
 			if (key.equals("oauth_signature")) continue;
 			if (key.equals("realm")) continue;
 			
-			parameterList.add(encodeParameter(key) + "=" + encodeParameter(parameterMap.get(key)));
+			parameterArray.add(new String[] { encodeParameter(key), encodeParameter(parameterMap.get(key)) });
 		}
 		
-		Collections.sort(parameterList);
+		Collections.sort(parameterArray, new Comparator<String[]>() {
+			public int compare(String[] s1, String[] s2) {
+				int ret = s1[0].compareTo(s2[0]);
+				if (ret == 0) {
+					ret = s1[1].compareTo(s2[1]);
+				}
+				return ret;
+			}
+		});
 		
 		StringBuffer sb = new StringBuffer();
-		for (String s : parameterList) {
+		for (String[] s : parameterArray) {
 			if (sb.length() > 0) sb.append("&");
-			sb.append(s);
+			sb.append(s[0]);
+			sb.append('=');
+			sb.append(s[1]);
 		}
 		return sb.toString();
+	}
+	
+	static int decodeHex(char c) throws IllegalArgumentException {
+		if (c >= '0' && c <= '9') {
+			return c - '0';
+		}
+		else if (c >= 'A' && c <= 'Z') {
+			return c - 'A' + 10;
+		}
+		throw new IllegalArgumentException();
+	}
+	
+	// converts two hex characters into a byte (which is returned as a character)
+	// e.g. converts ('6', '5') into 'A'
+	static char decodeHex(char c1, char c2) throws IllegalArgumentException {
+		return (char) (decodeHex(c1) << 4 | decodeHex(c2));
 	}
 	
 	static String decodeParameter(String s) throws DecoderException {
 		StringBuffer sb = new StringBuffer();
 		
-		char[] hexBuf = new char[2];
 		ByteArrayOutputStream buf = new ByteArrayOutputStream();
 		
 		try {
@@ -187,9 +228,7 @@ public class OAuth10 {
 					sb.append(c);
 				}			
 				else if (c == '%') {			
-					hexBuf[0] = s.charAt(++i);
-					hexBuf[1] = s.charAt(++i);
-					buf.write(Hex.decodeHex(hexBuf)[0]);
+					buf.write(decodeHex(s.charAt(++i), s.charAt(++i)));
 				}
 			}
 			if (buf.size() > 0) {
@@ -228,9 +267,5 @@ public class OAuth10 {
 			}				
 		}
 		return sb.toString();
-	}
-	
-	private void getResponse(String url,  HashMap<String, String> requestProperties) {
-		
 	}
 }
