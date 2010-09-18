@@ -67,13 +67,13 @@ public class OAuth10Tests  {
 		parameters.put("oauth_version", "1.0");
 		
 		assertEquals("oauth_consumer_key=key&oauth_nonce=12345&oauth_signature_method=HMAC-SHA1&oauth_timestamp=1234567890&oauth_token=&oauth_version=1.0",
-				OAuth10.normalizeParameters(parameters));
+				OAuth10.getNormalizedParameters(parameters, null));
 	}
 	
 	@Test
 	public void normalizeUrl() {
 		assertEquals("http://term.ie/oauth/example/request_token.php", 
-				OAuth10.normalizeUrl("http", "term.ie", 80, "/oauth/example/request_token.php"));
+				OAuth10.getNormalizedUrl("http", "term.ie", 80, "/oauth/example/request_token.php"));
 	}
 	
 	@Test

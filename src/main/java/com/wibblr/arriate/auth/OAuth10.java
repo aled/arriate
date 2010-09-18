@@ -13,7 +13,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Properties;
-import java.util.UUID;
+import java.util.Random;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -33,6 +33,11 @@ public class OAuth10 {
 	private String accessTokenUrl = null;
 	private String authorizeUrl = null;
 	
+	private String token = "";
+	private String tokenSecret = "";
+	
+	private Random random = new Random(System.currentTimeMillis());
+	
 	public OAuth10(String url) throws IOException {
 		Properties p = new Properties();
 		p.load(getClass().getResourceAsStream("/oauth/" + url + "/oauth-consumer.properties"));
@@ -46,71 +51,118 @@ public class OAuth10 {
 		requestTokenUrl = p.getProperty("REQUEST_TOKEN_URL");
 		accessTokenUrl = p.getProperty("ACCESS_TOKEN_URL");
 		authorizeUrl = p.getProperty("AUTHORIZE_URL");
-	}
+	}	
 
-	private void authenticate() {
+	void authenticate() {
 		try {
-			getRequestToken(Long.toString(System.currentTimeMillis() / 1000), UUID.randomUUID().toString());
+			HashMap<String, String> requestTokenMap = getRequestToken();
+		
+			token = requestTokenMap.get("oauth_token");
+			tokenSecret = requestTokenMap.get("oauth_token_secret");
+			
+			// Note that there is an optional callback parameter that can be passed to the authorizeUrl
+			System.out.println("Please go to the following URL to authenticate: " + authorizeUrl + "?" + "oauth_token=" + token);
+			System.in.read();
+			
+			HashMap<String, String> accessTokenMap = getAccessToken();
+			
+			token = accessTokenMap.get("oauth_token");
+			tokenSecret = accessTokenMap.get("oauth_token_secret");
+			
 		} catch (Exception e) {		
 			System.out.println(e.getMessage());
 		}	
 	}
 	
-	void getRequestToken(String timestamp, String nonce) throws Exception {
+	String getOauthTime() {
+		return Long.toString(System.currentTimeMillis() / 1000);
+	}
+	
+	String getNonce() {
+		return Long.toString(random.nextLong());
+	}
+	
+	// @return A Map containing the response parameters.
+	HashMap<String, String> getRequestToken() throws Exception {
+		return getToken(requestTokenUrl);
+	}
+	
+	// @return A Map containing the response parameters.
+	HashMap<String, String> getAccessToken() throws Exception {
+		return getToken(accessTokenUrl);
+	}
+	
+	HashMap<String, String> getToken(String requestUrl) throws Exception {
+		return getToken(requestUrl, getOauthTime(), getNonce());
+	}
+	
+	HashMap<String, String> getToken(String requestUrl, String timestamp, String nonce) throws Exception {		
+		HttpURLConnection con = (HttpURLConnection) new URL(requestUrl).openConnection();
+		con.setRequestMethod("POST");
+		
+		// Need content-length header to fix the following failure:
+		//    HTTP/1.0 411 Length Required
+		//    X-Squid-Error = ERR_INVALID_REQ 0
+		con.setRequestProperty("Content-Length", "0");
+		
+		signRequest(con, timestamp, nonce);
+		
+		System.out.println("Response headers:");
+		for (String key : con.getHeaderFields().keySet()) {
+			System.out.println(key + " = " + con.getHeaderField(key));
+		}
+		
+		if (con.getResponseCode() != 200) {
+			BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream()));
+			String line;
+			while ((line = br.readLine()) != null) {
+				System.out.println(line);
+			}
+			throw new IOException();
+		}
+		
+		return parseParameters(con.getInputStream());
+	}
+	
+	void signRequest(HttpURLConnection con) throws Exception {
+		signRequest(con, getOauthTime(), getNonce());
+	}
+	
+	void signRequest(HttpURLConnection con, String timestamp, String nonce) throws Exception {
+		System.out.println("Signing request: " + con.getURL());
+		
 		HashMap<String, String> authFields = new HashMap<String, String>();
 		authFields.put("oauth_consumer_key", consumerKey);
 		authFields.put("oauth_signature_method", "HMAC-SHA1");
-		authFields.put("oauth_token", "");
+		authFields.put("oauth_token", token);
 		authFields.put("oauth_timestamp", timestamp);
 		authFields.put("oauth_nonce", nonce);
 		authFields.put("oauth_version", "1.0");
-		authFields.put("oauth_callback", "");
-		
-		HashMap<String, String> requestProperties = new HashMap<String, String>();
-		
-		String httpRequestMethod = "POST";
-		String requestUrl = requestTokenUrl;
-		String normalizedParameters = normalizeParameters(authFields);
-		
-		String signatureBaseString = getSignatureBaseString(httpRequestMethod, requestUrl, normalizedParameters);
-		
-		authFields.put("oauth_signature",  getSignature(signatureBaseString, consumerSecret, ""));
-		requestProperties.put("Authorization", getAuthorizationHeader(authFields));
-		
-		try {
-			HttpURLConnection con = (HttpURLConnection) new URL(requestTokenUrl).openConnection();
-			con.setRequestMethod(httpRequestMethod);
+		//authFields.put("oauth_callback", "");
 			
-			System.out.println("Request properties:");
-			for (String key : requestProperties.keySet()) {
-				con.setRequestProperty(key, requestProperties.get(key));
-				System.out.println(key + " = " + requestProperties.get(key));
+		URL url = con.getURL();
+		HashMap<String, String> urlParameters = new HashMap<String, String>();
+		if (url.getQuery() != null) {
+			String[] keyvalues = url.getQuery().split("&");
+			for (String keyvalue : keyvalues) {
+				String[] p = keyvalue.split("=");
+				urlParameters.put(p[0], p[1]);
 			}
-			
-			System.out.println("Response headers:");
-			for (String key : con.getHeaderFields().keySet()) {
-				System.out.println(key + " = " + con.getHeaderField(key));
-			}
-			
-			if (con.getResponseCode() != 200) {
-				BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream()));
-				String line;
-				while ((line = br.readLine()) != null) {
-					System.out.println(line);
-				}
-				return;
-			}
-			
-			HashMap<String, String> responseParameters = parseParameters(con.getInputStream());
-			
-			System.out.println("Response parameters:");
-			for (String key : responseParameters.keySet()) {
-				System.out.println(key + " = " + responseParameters.get(key));
-			}			
 		}
-		catch (Exception e) {
-			e.printStackTrace();
-		}
+		
+		String method = con.getRequestMethod();
+		String normalizedUrl = getNormalizedUrl(url.getProtocol(), url.getHost(), url.getPort(), url.getPath());
+		String normalizedParameters = getNormalizedParameters(authFields, urlParameters);		
+		String signatureBaseString = getSignatureBaseString(method, normalizedUrl, normalizedParameters);
+		
+		authFields.put("oauth_signature",  getSignature(signatureBaseString, consumerSecret, tokenSecret));
+		con.setRequestProperty("Authorization", getAuthorizationHeader(authFields));
+		//System.out.println("Request properties:");
+		
+		System.out.println("Added Authorization header: " + getAuthorizationHeader(authFields));
+		//for (String key : con.getRequestProperties().keySet()) {
+		//	System.out.println(key + " = " + con.getRequestProperties().get(key));
+		//}		
 	}
 	
 	private String getAuthorizationHeader(HashMap<String, String> authFields) {
@@ -129,14 +181,24 @@ public class OAuth10 {
 		}		
 		return sb.toString();
 	}
+
+	public static HashMap<String, String> parseParameters() throws IOException, DecoderException {
+		return parseParameters();		
+	}
 	
 	public static HashMap<String, String> parseParameters(InputStream is) throws IOException, DecoderException {
 		HashMap<String, String> parameters = new HashMap<String, String>();
 		DelimitedStringReader rdr = new DelimitedStringReader(new InputStreamReader(is));
 		
-		while (rdr.ready()) {
-			parameters.put(decodeParameter(rdr.next('=')), decodeParameter(rdr.next('&')));
-		}	
+		String key, value;
+		do {
+			key = rdr.next('=');
+			value = rdr.next('&');
+			
+			if (key != null && value != null) {
+				parameters.put(decodeParameter(key), decodeParameter(value));
+			}
+		} while (key != null && value != null);
 		return parameters;
 	}
 	
@@ -158,12 +220,12 @@ public class OAuth10 {
 			+ "&" + encodeParameter(normalizedParameters);
 	}
 	
-	static String normalizeUrl(String scheme, String host, int port, String path) {
+	static String getNormalizedUrl(String protocol, String host, int port, String path) {
 		StringBuffer sb = new StringBuffer();
-		sb.append(scheme);
+		sb.append(protocol);
 		sb.append("://");
 		sb.append(host);
-		if (("http".equals(scheme) && port != 80) || ("https".equals(scheme) && port != 443)) {
+		if (port > 0 && (("http".equals(protocol) && port != 80) || ("https".equals(protocol) && port != 443))) {
 			sb.append(":");
 			sb.append(Integer.toString(port));
 		}
@@ -171,14 +233,23 @@ public class OAuth10 {
 		return sb.toString();
 	}
 	
-	static String normalizeParameters(HashMap<String, String> parameterMap) {
+	static String getNormalizedParameters(HashMap<String, String> authFields, HashMap<String, String> parameters) {
 		ArrayList<String[]> parameterArray = new ArrayList<String[]>();
 		
-		for(String key : parameterMap.keySet()) {
+		for(String key : authFields.keySet()) {
 			if (key.equals("oauth_signature")) continue;
 			if (key.equals("realm")) continue;
 			
-			parameterArray.add(new String[] { encodeParameter(key), encodeParameter(parameterMap.get(key)) });
+			parameterArray.add(new String[] { encodeParameter(key), encodeParameter(authFields.get(key)) });
+		}
+		
+		if (parameters != null) {
+			for(String key : parameters.keySet()) {
+				if (key.equals("oauth_signature")) continue;
+				if (key.equals("realm")) continue;
+				
+				parameterArray.add(new String[] { encodeParameter(key), encodeParameter(parameters.get(key)) });
+			}
 		}
 		
 		Collections.sort(parameterArray, new Comparator<String[]>() {
