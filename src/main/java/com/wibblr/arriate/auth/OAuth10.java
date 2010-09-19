@@ -8,6 +8,9 @@ import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -23,80 +26,111 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.binary.Hex;
 
 public class OAuth10 {
-	// As far as I can tell, all the available OAuth libraries seem to only work with 
-	// v1.0a of the standard.
-	// Therefore let's just write the stupid thing in longhand - how hard can it be...?
-	
 	private String consumerKey = null;
 	private String consumerSecret = null;
 	private String requestTokenUrl = null;
 	private String accessTokenUrl = null;
 	private String authorizeUrl = null;
 	
-	private String token = "";
-	private String tokenSecret = "";
+	private TokenStorage tokenStorage = null;
+	private ExternalAuthorizer authorizer = null;
 	
 	private Random random = new Random(System.currentTimeMillis());
 	
-	public OAuth10(String url) throws IOException {
+	/**
+	 * Constructor
+	 * 
+	 * @param provider: The name of a (predefined) provider, used to look up the consumer key, consumer secret, and all the URLs
+	 *           involved in the authorization process. Currently the provider must be one of:
+	 *           <ul>
+	 *           <li>www.openstreetmap.org</li>
+	 *           <li>api06.dev.openstreetmap.org</li>
+	 *           <li>term.ie</li>
+	 *           </ul>
+	 *         
+	 * @param tokenStorage: An object used to save the access token and secret in persistant storage
+	 * 
+	 * @param authorizer: An object used to perform authorization against the provider.
+	 */
+	 public OAuth10(String provider, TokenStorage tokenStorage, ExternalAuthorizer authorizer) throws IOException {
+		this.tokenStorage = tokenStorage;
+		this.authorizer = authorizer;
+		
 		Properties p = new Properties();
-		p.load(getClass().getResourceAsStream("/oauth/" + url + "/oauth-consumer.properties"));
+		p.load(getClass().getResourceAsStream("/oauth/" + provider + "/oauth-consumer.properties"));
 		
 		consumerKey = p.getProperty("CONSUMER_KEY");
 		consumerSecret = p.getProperty("CONSUMER_SECRET");
 		
 		p.clear();
-		p.load(getClass().getResourceAsStream("/oauth/" + url + "/oauth-provider.properties"));
+		p.load(getClass().getResourceAsStream("/oauth/" + provider + "/oauth-provider.properties"));
 	
 		requestTokenUrl = p.getProperty("REQUEST_TOKEN_URL");
 		accessTokenUrl = p.getProperty("ACCESS_TOKEN_URL");
 		authorizeUrl = p.getProperty("AUTHORIZE_URL");
 	}	
 
-	void authenticate() {
-		try {
-			HashMap<String, String> requestTokenMap = getRequestToken();
-		
-			token = requestTokenMap.get("oauth_token");
-			tokenSecret = requestTokenMap.get("oauth_token_secret");
-			
-			// Note that there is an optional callback parameter that can be passed to the authorizeUrl
-			System.out.println("Please go to the following URL to authenticate: " + authorizeUrl + "?" + "oauth_token=" + token);
-			System.in.read();
-			
-			HashMap<String, String> accessTokenMap = getAccessToken();
-			
-			token = accessTokenMap.get("oauth_token");
-			tokenSecret = accessTokenMap.get("oauth_token_secret");
-			
-		} catch (Exception e) {		
-			System.out.println(e.getMessage());
-		}	
+	public boolean isAuthorized() {
+		return (tokenStorage.getToken().length() > 0 && tokenStorage.getTokenSecret().length() > 0);
+	}
+	 
+	/**
+	 * Deletes all access tokens and secrets for this provider from memory (and persistent storage, if any)
+	 */
+	public void deauthorize() {
+		tokenStorage.set(null, null);
 	}
 	
-	String getOauthTime() {
+	/**
+	 * Sets up everything so that requests can be signed. Will call back to the ExternalAuthorizer passed
+	 * to the constructor, which is responsible for authorizing the user to the external site.
+	 */
+	public void authorize() throws IOException, SignatureCalculationException {
+		String accessToken = null, accessTokenSecret = null;
+		
+		try {		
+			HashMap<String, String> requestTokenMap = getRequestToken();
+			
+			String requestToken = requestTokenMap.get("oauth_token");
+			String requestTokenSecret = requestTokenMap.get("oauth_token_secret");
+			
+			if (authorizer.authorize(authorizeUrl + "?" + "oauth_token=" + requestToken)) {
+				HashMap<String, String> accessTokenMap = getAccessToken(requestToken, requestTokenSecret);	
+				accessToken = accessTokenMap.get("oauth_token");
+				accessTokenSecret = accessTokenMap.get("oauth_token_secret");	
+			}
+		} finally {
+			tokenStorage.set(accessToken, accessTokenSecret);
+		}	 
+	}
+ 
+	public void signRequest(HttpURLConnection con) throws SignatureCalculationException {
+		signRequest(con, getOauthTime(), getNonce(), tokenStorage.getToken(), tokenStorage.getTokenSecret());
+	}
+	
+	private String getOauthTime() {
 		return Long.toString(System.currentTimeMillis() / 1000);
 	}
 	
-	String getNonce() {
+	private String getNonce() {
 		return Long.toString(random.nextLong());
 	}
 	
 	// @return A Map containing the response parameters.
-	HashMap<String, String> getRequestToken() throws Exception {
-		return getToken(requestTokenUrl);
+	private HashMap<String, String> getRequestToken() throws IOException, SignatureCalculationException {
+		return getToken(requestTokenUrl, null, null);
 	}
 	
 	// @return A Map containing the response parameters.
-	HashMap<String, String> getAccessToken() throws Exception {
-		return getToken(accessTokenUrl);
+	HashMap<String, String> getAccessToken(String requestToken, String requestTokenSecret) throws IOException, SignatureCalculationException {
+		return getToken(accessTokenUrl, requestToken, requestTokenSecret);
 	}
 	
-	HashMap<String, String> getToken(String requestUrl) throws Exception {
-		return getToken(requestUrl, getOauthTime(), getNonce());
+	HashMap<String, String> getToken(String requestUrl, String token, String tokenSecret) throws IOException, SignatureCalculationException {
+		return getToken(requestUrl, getOauthTime(), getNonce(), token, tokenSecret);
 	}
 	
-	HashMap<String, String> getToken(String requestUrl, String timestamp, String nonce) throws Exception {		
+	HashMap<String, String> getToken(String requestUrl, String timestamp, String nonce, String token, String tokenSecret) throws IOException, SignatureCalculationException {		
 		HttpURLConnection con = (HttpURLConnection) new URL(requestUrl).openConnection();
 		con.setRequestMethod("POST");
 		
@@ -105,7 +139,7 @@ public class OAuth10 {
 		//    X-Squid-Error = ERR_INVALID_REQ 0
 		con.setRequestProperty("Content-Length", "0");
 		
-		signRequest(con, timestamp, nonce);
+		signRequest(con, timestamp, nonce, token, tokenSecret);
 		
 		System.out.println("Response headers:");
 		for (String key : con.getHeaderFields().keySet()) {
@@ -121,15 +155,22 @@ public class OAuth10 {
 			throw new IOException();
 		}
 		
-		return parseParameters(con.getInputStream());
-	}
-	
-	void signRequest(HttpURLConnection con) throws Exception {
-		signRequest(con, getOauthTime(), getNonce());
-	}
-	
-	void signRequest(HttpURLConnection con, String timestamp, String nonce) throws Exception {
+		HashMap<String, String> parameters = new HashMap<String, String>();
+		try {
+			parameters = parseParameters(con.getInputStream());
+		}
+		catch (ParseException pe) {
+			throw new IOException(pe);
+		}
+		
+		return parameters;
+	}	
+		
+	private void signRequest(HttpURLConnection con, String timestamp, String nonce, String token, String tokenSecret) throws SignatureCalculationException {
 		System.out.println("Signing request: " + con.getURL());
+		
+		if (token == null) token = "";
+		if (tokenSecret == null) tokenSecret = "";
 		
 		HashMap<String, String> authFields = new HashMap<String, String>();
 		authFields.put("oauth_consumer_key", consumerKey);
@@ -181,37 +222,47 @@ public class OAuth10 {
 		}		
 		return sb.toString();
 	}
-
-	public static HashMap<String, String> parseParameters() throws IOException, DecoderException {
-		return parseParameters();		
-	}
 	
-	public static HashMap<String, String> parseParameters(InputStream is) throws IOException, DecoderException {
+	public static HashMap<String, String> parseParameters(InputStream is) throws ParseException {
 		HashMap<String, String> parameters = new HashMap<String, String>();
 		DelimitedStringReader rdr = new DelimitedStringReader(new InputStreamReader(is));
 		
-		String key, value;
-		do {
-			key = rdr.next('=');
-			value = rdr.next('&');
-			
-			if (key != null && value != null) {
-				parameters.put(decodeParameter(key), decodeParameter(value));
-			}
-		} while (key != null && value != null);
+		try {
+			String key, value;
+			do {
+				key = rdr.next('=');
+				value = rdr.next('&');
+				
+				if (key != null && value != null) {
+					parameters.put(decodeParameter(key), decodeParameter(value));
+				}
+			} while (key != null && value != null);
+		} catch (IOException ioe) {
+			throw new ParseException(ioe.getLocalizedMessage(), rdr.bytesRead());
+		} catch (DecoderException de) {
+			throw new ParseException(de.getLocalizedMessage(), rdr.bytesRead());
+		}
 		return parameters;
 	}
 	
-	static String getSignature(String signatureBaseString, String consumerSecret, String tokenSecret) throws Exception {
+	static String getSignature(String signatureBaseString, String consumerSecret, String tokenSecret) throws SignatureCalculationException {
 		return hmacsha1(signatureBaseString, encodeParameter(consumerSecret) + "&" + encodeParameter(tokenSecret));
 	}
 	
-	static String hmacsha1(String text, String key) throws Exception {
-		SecretKeySpec keySpec = new SecretKeySpec(key.getBytes("UTF-8"), "HmacSHA1");
-		Mac mac = Mac.getInstance("HmacSHA1");
-		mac.init(keySpec);
-		byte[] bytes = mac.doFinal(text.getBytes("UTF-8"));
-		return new String(Base64.encodeBase64(bytes));
+	static String hmacsha1(String text, String key) throws SignatureCalculationException {
+		try {
+			SecretKeySpec keySpec = new SecretKeySpec(key.getBytes("UTF-8"), "HmacSHA1");
+			Mac mac = Mac.getInstance("HmacSHA1");
+			mac.init(keySpec);
+			byte[] bytes = mac.doFinal(text.getBytes("UTF-8"));
+			return new String(Base64.encodeBase64(bytes));
+		} catch (NoSuchAlgorithmException nsae) {
+			throw new SignatureCalculationException();
+		} catch (UnsupportedEncodingException uee) {
+			throw new SignatureCalculationException();
+		} catch (InvalidKeyException ike) {
+			throw new SignatureCalculationException();
+		}
 	}
 	
 	static String getSignatureBaseString(String httpRequestMethod, String requestUrl, String normalizedParameters) {

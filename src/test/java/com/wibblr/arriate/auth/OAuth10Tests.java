@@ -3,7 +3,8 @@ package com.wibblr.arriate.auth;
 import static org.junit.Assert.assertEquals;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.text.ParseException;
 import java.util.HashMap;
 
 import org.apache.commons.codec.DecoderException;
@@ -43,7 +44,7 @@ public class OAuth10Tests  {
 	}
 	
 	@Test
-	public void parseResponseParameters() throws IOException, DecoderException {
+	public void parseResponseParameters() throws ParseException, UnsupportedEncodingException {
 		HashMap<String, String> parameters = OAuth10.parseParameters(new ByteArrayInputStream(
 				"oauth_token=ab3cd9j4ks73hf7g&oauth_token_secret=xyz4992k83j47x0b".getBytes("UTF-8")));
 		assertEquals(2, parameters.size());

@@ -10,20 +10,24 @@ import java.net.URL;
 import org.junit.Test;
 
 public class OpenStreetMapTests {
-	private String host = "api06.dev.openstreetmap.org";
-	
+	private String provider = "api06.dev.openstreetmap.org";
+		
 	private void callApiMethod(String path) throws Exception {
 		String scheme = "http";
 		String pathPrefix = "/api/0.6";
 		
-		HttpURLConnection con = (HttpURLConnection) new URL(scheme + "://" + host + pathPrefix + path).openConnection();		
+		HttpURLConnection con = (HttpURLConnection) new URL(scheme + "://" + provider + pathPrefix + path).openConnection();		
 		con.setRequestMethod("GET");
 		
-		OAuth10 oauth = new OAuth10(host);
-		oauth.authenticate();
-		oauth.signRequest(con);
-		assertEquals(200, con.getResponseCode());
+		OAuth10 oauth = new OAuth10(provider, new TokenStorage(), new ManualAuthorizer());
 		
+		if (!oauth.isAuthorized()) {
+			oauth.authorize();
+		}
+		
+		oauth.signRequest(con);
+		
+		assertEquals(200, con.getResponseCode());
 		System.out.println("ContentLength = " + con.getContentLength());
 		
 		BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream()));
@@ -33,6 +37,15 @@ public class OpenStreetMapTests {
 		}
 	}
 	
+	//@Test
+	public void storeTokens() {
+		TokenStorage storage = new TokenStorage();
+		storage.set("MyToken", "MyTokenSecret");
+		
+		assertEquals("MyToken", storage.getToken());
+		assertEquals("MyTokenSecret", storage.getTokenSecret());
+	}
+		
 	@Test
 	public void getUserDetails() throws Exception {
 		
@@ -57,11 +70,11 @@ public class OpenStreetMapTests {
 	}
 	
 	//@Test
-	public void getRequestToken() throws Exception {	
-		OAuth10 oa = new OAuth10("api06.dev.openstreetmap.org");
-		oa.authenticate();
+	//public void getRequestToken() throws Exception {	
+	//	OAuth10 oa = new OAuth10("api06.dev.openstreetmap.org", new AccessTokenStorage());
+	//	oa.authenticate();
 		
 		//OAuth10 oa2 = new OAuth10("term.ie");		
 		//oa2.authenticate();
-	}
+	//}
 }
