@@ -9,17 +9,23 @@ import java.net.URL;
 
 import org.junit.Test;
 
+import com.wibblr.arriate.osm.api06.Api06;
+
 public class OpenStreetMapTests {
 	private String provider = "api06.dev.openstreetmap.org";
 		
-	private void callApiMethod(String path) throws Exception {
+	private void sentHttpPost() {
+		
+	}
+	
+	private void sendHttpGet(String path) throws Exception {
 		String scheme = "http";
 		String pathPrefix = "/api/0.6";
 		
 		HttpURLConnection con = (HttpURLConnection) new URL(scheme + "://" + provider + pathPrefix + path).openConnection();		
 		con.setRequestMethod("GET");
 		
-		OAuth10 oauth = new OAuth10(provider, new TokenStorage(), new ManualAuthorizer());
+		OAuth10 oauth = new OAuth10(provider, new TokenStorage(provider), new ManualAuthorizer());
 		
 		if (!oauth.isAuthorized()) {
 			oauth.authorize();
@@ -36,45 +42,17 @@ public class OpenStreetMapTests {
 			System.out.println(line);
 		}
 	}
-	
-	//@Test
-	public void storeTokens() {
-		TokenStorage storage = new TokenStorage();
-		storage.set("MyToken", "MyTokenSecret");
-		
-		assertEquals("MyToken", storage.getToken());
-		assertEquals("MyTokenSecret", storage.getTokenSecret());
-	}
 		
 	@Test
 	public void getUserDetails() throws Exception {
+		//sendHttpGet("/user/details");
+		Api06 api = new Api06(provider, new OAuth10(provider, new TokenStorage(provider), new ManualAuthorizer()));
 		
-		callApiMethod("/user/details");
-		
-		//String host = "term.ie";
-		//String path = "/oauth/example/echo_api.php?a=b&c=d";
-		
-		
-		// Expect 'unauthorised' response at this point
-		//assertEquals(401, con.getResponseCode());
-		
-		// Now try again using OAuth
-		//con.disconnect();
-		
-		
+		api.getUserDetails();
 	}
 	
 	@Test
 	public void getGpxFiles() throws Exception {
-		callApiMethod("/user/gpx_files");
+		sendHttpGet("/user/gpx_files");
 	}
-	
-	//@Test
-	//public void getRequestToken() throws Exception {	
-	//	OAuth10 oa = new OAuth10("api06.dev.openstreetmap.org", new AccessTokenStorage());
-	//	oa.authenticate();
-		
-		//OAuth10 oa2 = new OAuth10("term.ie");		
-		//oa2.authenticate();
-	//}
 }

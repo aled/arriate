@@ -4,13 +4,13 @@ import java.io.File;
 import java.io.FileInputStream;import java.io.FileOutputStream;
 import java.util.Properties;
 
-// Simple class for storing access token in ~/.arriate/access_token
-class TokenStorage() {
+// Simple class for storing access token in ~/.arriate/access_tokens/providername
+class TokenStorage(provider: String) {
 	val tokenStorageDirectory: File = new File(System.getProperty("user.home"), ".arriate")
-	val tokenStorageFile: File = new File(tokenStorageDirectory, "access_token")
+	val tokenStorageFile: File = new File(tokenStorageDirectory, provider)
 	
-	var token: String = null
-	var tokenSecret: String = null
+	var token: String = ""
+	var tokenSecret: String = ""
 		
 	try {
 		val p = new Properties()
@@ -22,7 +22,6 @@ class TokenStorage() {
 		case e: Exception => Unit;
 	}
 
-	
 	def getToken(): String = token
 	def getTokenSecret(): String = tokenSecret
 	
@@ -37,7 +36,7 @@ class TokenStorage() {
 			tokenStorageFile.delete()
 		}
 		if (!tokenStorageDirectory.exists()) {
-			tokenStorageDirectory.mkdir()
+			tokenStorageDirectory.mkdirs()
 		}
 		tokenStorageFile.createNewFile()
 		
