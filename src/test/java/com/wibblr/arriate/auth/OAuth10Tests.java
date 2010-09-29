@@ -6,6 +6,7 @@ import java.io.ByteArrayInputStream;
 import java.io.UnsupportedEncodingException;
 import java.text.ParseException;
 import java.util.HashMap;
+import java.util.Properties;
 
 import org.apache.commons.codec.DecoderException;
 import org.junit.Test;
@@ -56,14 +57,14 @@ public class OAuth10Tests  {
 	//    http://hueniverse.com/2008/10/beginners-guide-to-oauth-part-iv-signing-requests/
 	@Test
 	public void normalizeParameters() {
-		HashMap<String, String> parameters = new HashMap<String, String>();
+		Properties parameters = new Properties();
 		
-		parameters.put("oauth_consumer_key", "key");
-		parameters.put("oauth_nonce", "12345");
-		parameters.put("oauth_signature_method", "HMAC-SHA1");
-		parameters.put("oauth_token", "");
-		parameters.put("oauth_timestamp", "1234567890");
-		parameters.put("oauth_version", "1.0");
+		parameters.setProperty("oauth_consumer_key", "key");
+		parameters.setProperty("oauth_nonce", "12345");
+		parameters.setProperty("oauth_signature_method", "HMAC-SHA1");
+		parameters.setProperty("oauth_token", "");
+		parameters.setProperty("oauth_timestamp", "1234567890");
+		parameters.setProperty("oauth_version", "1.0");
 		
 		assertEquals("oauth_consumer_key=key&oauth_nonce=12345&oauth_signature_method=HMAC-SHA1&oauth_timestamp=1234567890&oauth_token=&oauth_version=1.0",
 				OAuth10.getNormalizedParameters(parameters, null));

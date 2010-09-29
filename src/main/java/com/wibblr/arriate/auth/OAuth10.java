@@ -94,18 +94,21 @@ public class OAuth10 {
 			String requestToken = requestTokenMap.get("oauth_token");
 			String requestTokenSecret = requestTokenMap.get("oauth_token_secret");
 			
-			if (authorizer.authorize(authorizeUrl + "?" + "oauth_token=" + requestToken)) {
-				HashMap<String, String> accessTokenMap = getAccessToken(requestToken, requestTokenSecret);	
-				accessToken = accessTokenMap.get("oauth_token");
-				accessTokenSecret = accessTokenMap.get("oauth_token_secret");	
-			}
+			String verifier = authorizer.authorize(authorizeUrl + "?" + "oauth_token=" + requestToken);
+	
+			HashMap<String, String> accessTokenMap = getAccessToken(requestToken, requestTokenSecret, verifier);	
+			accessToken = accessTokenMap.get("oauth_token");
+			accessTokenSecret = accessTokenMap.get("oauth_token_secret");	
 		} finally {
 			tokenStorage.set(accessToken, accessTokenSecret);
 		}	 
 	}
  
 	public void signRequest(HttpURLConnection con) throws SignatureCalculationException {
-		signRequest(con, getOauthTime(), getNonce(), tokenStorage.getToken(), tokenStorage.getTokenSecret());
+		Properties oauthProperties = getOauthProperties(tokenStorage.getToken());
+		String tokenSecret = tokenStorage.getTokenSecret();
+		
+		signRequest(con, oauthProperties, tokenSecret);
 	}
 	
 	private String getOauthTime() {
@@ -116,21 +119,49 @@ public class OAuth10 {
 		return Long.toString(random.nextLong());
 	}
 	
+	private Properties getOauthProperties(String token) {
+		return getOauthProperties(token, getOauthTime(), getNonce());
+	}
+	
+	/**
+	 * 
+	 * @param token
+	 * @param timestamp
+	 * @param nonce
+	 * @return Properties object containing the common oauth properties that are required for
+	 * all requests
+	 */
+	private Properties getOauthProperties(String token, String timestamp, String nonce) {
+		Properties oauthProperties = new Properties();
+		
+		oauthProperties.put("oauth_consumer_key", consumerKey);
+		oauthProperties.put("oauth_signature_method", "HMAC-SHA1");
+		oauthProperties.put("oauth_token", token);
+		oauthProperties.put("oauth_timestamp", timestamp);
+		oauthProperties.put("oauth_nonce", nonce);
+		oauthProperties.put("oauth_version", "1.0");
+		
+		return oauthProperties;
+	}
+	
 	// @return A Map containing the response parameters.
 	private HashMap<String, String> getRequestToken() throws IOException, SignatureCalculationException {
-		return getToken(requestTokenUrl, null, null);
+		Properties oauthProperties = getOauthProperties("");
+		oauthProperties.setProperty("oauth_callback", "oob");
+		
+		return getToken(requestTokenUrl, oauthProperties, null);
 	}
 	
 	// @return A Map containing the response parameters.
-	HashMap<String, String> getAccessToken(String requestToken, String requestTokenSecret) throws IOException, SignatureCalculationException {
-		return getToken(accessTokenUrl, requestToken, requestTokenSecret);
+	HashMap<String, String> getAccessToken(String requestToken, String requestTokenSecret, String verifier) throws IOException, SignatureCalculationException {
+		Properties oauthProperties = getOauthProperties(requestToken);
+		oauthProperties.setProperty("oauth_callback", "oob");
+		oauthProperties.setProperty("oauth_verifier", verifier);
+		
+		return getToken(accessTokenUrl, oauthProperties, requestTokenSecret);
 	}
 	
-	HashMap<String, String> getToken(String requestUrl, String token, String tokenSecret) throws IOException, SignatureCalculationException {
-		return getToken(requestUrl, getOauthTime(), getNonce(), token, tokenSecret);
-	}
-	
-	HashMap<String, String> getToken(String requestUrl, String timestamp, String nonce, String token, String tokenSecret) throws IOException, SignatureCalculationException {		
+	HashMap<String, String> getToken(String requestUrl, Properties oauthProperties, String tokenSecret) throws IOException, SignatureCalculationException {		
 		HttpURLConnection con = (HttpURLConnection) new URL(requestUrl).openConnection();
 		con.setRequestMethod("POST");
 		
@@ -139,7 +170,7 @@ public class OAuth10 {
 		//    X-Squid-Error = ERR_INVALID_REQ 0
 		con.setRequestProperty("Content-Length", "0");
 		
-		signRequest(con, timestamp, nonce, token, tokenSecret);
+		signRequest(con, oauthProperties, tokenSecret);
 		
 		System.out.println("Response headers:");
 		for (String key : con.getHeaderFields().keySet()) {
@@ -166,20 +197,10 @@ public class OAuth10 {
 		return parameters;
 	}	
 		
-	private void signRequest(HttpURLConnection con, String timestamp, String nonce, String token, String tokenSecret) throws SignatureCalculationException {
+	private void signRequest(HttpURLConnection con, Properties oauthProperties, String tokenSecret) throws SignatureCalculationException {
 		System.out.println("Signing request: " + con.getURL());
 		
-		if (token == null) token = "";
 		if (tokenSecret == null) tokenSecret = "";
-		
-		HashMap<String, String> authFields = new HashMap<String, String>();
-		authFields.put("oauth_consumer_key", consumerKey);
-		authFields.put("oauth_signature_method", "HMAC-SHA1");
-		authFields.put("oauth_token", token);
-		authFields.put("oauth_timestamp", timestamp);
-		authFields.put("oauth_nonce", nonce);
-		authFields.put("oauth_version", "1.0");
-		//authFields.put("oauth_callback", "");
 			
 		URL url = con.getURL();
 		HashMap<String, String> urlParameters = new HashMap<String, String>();
@@ -193,23 +214,24 @@ public class OAuth10 {
 		
 		String method = con.getRequestMethod();
 		String normalizedUrl = getNormalizedUrl(url.getProtocol(), url.getHost(), url.getPort(), url.getPath());
-		String normalizedParameters = getNormalizedParameters(authFields, urlParameters);		
+		String normalizedParameters = getNormalizedParameters(oauthProperties, urlParameters);		
 		String signatureBaseString = getSignatureBaseString(method, normalizedUrl, normalizedParameters);
 		
-		authFields.put("oauth_signature",  getSignature(signatureBaseString, consumerSecret, tokenSecret));
-		con.setRequestProperty("Authorization", getAuthorizationHeader(authFields));
+		oauthProperties.setProperty("oauth_signature",  getSignature(signatureBaseString, consumerSecret, tokenSecret));
+		con.setRequestProperty("Authorization", getAuthorizationHeader(oauthProperties));
 		//System.out.println("Request properties:");
 		
-		System.out.println("Added Authorization header: " + getAuthorizationHeader(authFields));
+		System.out.println("Added Authorization header: " + getAuthorizationHeader(oauthProperties));
 		//for (String key : con.getRequestProperties().keySet()) {
 		//	System.out.println(key + " = " + con.getRequestProperties().get(key));
 		//}		
 	}
 	
-	private String getAuthorizationHeader(HashMap<String, String> authFields) {
+	private String getAuthorizationHeader(Properties oauthProperties) {
 		StringBuilder sb = new StringBuilder();
 		
-		for (String k : authFields.keySet()) {
+		for (Object o : oauthProperties.keySet()) {
+			String k = (String) o;
 			if (sb.length() == 0) {
 				sb.append("OAuth ");		
 			} else {
@@ -217,7 +239,7 @@ public class OAuth10 {
 			}
 			sb.append(encodeParameter(k));
 			sb.append("=\"");
-			sb.append(encodeParameter(authFields.get(k)));
+			sb.append(encodeParameter(oauthProperties.getProperty(k)));
 			sb.append("\"");
 		}		
 		return sb.toString();
@@ -284,14 +306,20 @@ public class OAuth10 {
 		return sb.toString();
 	}
 	
-	static String getNormalizedParameters(HashMap<String, String> authFields, HashMap<String, String> parameters) {
+	static String getNormalizedParameters(Properties oauthProperties, HashMap<String, String> parameters) {
 		ArrayList<String[]> parameterArray = new ArrayList<String[]>();
 		
-		for(String key : authFields.keySet()) {
+		for(Object o : oauthProperties.keySet()) {
+			String key = (String) o;
 			if (key.equals("oauth_signature")) continue;
 			if (key.equals("realm")) continue;
 			
-			parameterArray.add(new String[] { encodeParameter(key), encodeParameter(authFields.get(key)) });
+			String value = oauthProperties.getProperty(key);
+			if (value == null) {
+				value = "";
+			}
+			
+			parameterArray.add(new String[] { encodeParameter(key), encodeParameter(value) });
 		}
 		
 		if (parameters != null) {

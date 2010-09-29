@@ -1,13 +1,12 @@
 package com.wibblr.arriate.auth
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 class ManualAuthorizer extends ExternalAuthorizer {
-	def authorize(url: String): Boolean = {
-		System.out.println("Authorization required: please visit the following URL, then press any key to continue (or ctrl-c to cancel).");
+	def authorize(url: String): String = {
+		System.out.println("Authorization required: please visit the following URL, then enter the verification code to continue (or an empty line to cancel).");
 		System.out.println(url);
 		
-		val i = System.in.read();
-		System.out.println(i);
-		
-		return true;
+		return new BufferedReader(new InputStreamReader(System.in)).readLine();
 	}		
 }

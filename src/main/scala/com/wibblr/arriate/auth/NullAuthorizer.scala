@@ -5,5 +5,5 @@ package com.wibblr.arriate.auth
  * that give out pre-authorized tokens (for testing only) *
  */
 class NullAuthorizer extends ExternalAuthorizer {
-	def authorize(url: String): Boolean = true
+	def authorize(url: String): String = "[no verification code]"
 }
