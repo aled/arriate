@@ -1,4 +1,8 @@
 .gradle
 .project
 .classpath
+.cache
+org.eclipse.jdt.core.prefs
+**.class
 build
+bin
